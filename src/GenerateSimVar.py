@@ -1,6 +1,7 @@
 import sys, getopt
 import pandas as p
 import numpy as np
+import argparse
 
 class Constants(object):
     #LOG_SCALE_POP = np.log(1.0e7)
@@ -68,25 +69,23 @@ def generate_sample_df(control_otus,treatment_otus,cols,sample_labels):
 
 
 def main(argv):
-    inputfile = ''
-    outputfile = ''
-    try:
-        opts, args = getopt.getopt(argv,"hi:o:s:",["ifile=","ofile=","seed="])
-    except getopt.GetoptError:
-        print 'test.py -i <inputfile> -o <outputfile>'
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            print 'test.py -i <inputfile> -o <outputfile>'
-            sys.exit()
-        elif opt in ("-i", "--ifile"):
-            inputfile = arg
-        elif opt in ("-o", "--ofile"):
-            outputfile = arg
-        elif opt in ("-s", "--seed"):
-            seed = arg
+            
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_file", help="input OTU file")
     
-    np.random.seed(set_random_state(seed))
+    parser.add_argument("output_file", help="output file name")
+    
+    parser.add_argument('-s','--random_seed',default=23724839, type=int, 
+        help=("specifies seed for numpy random number generator defaults to 23724839"))
+    
+    #get command line arguments  
+    args = parser.parse_args()
+    
+    inputfile = args.input_file
+    outputfile = args.output_file
+    randomseed = args.random_seed
+    
+    np.random.seed(set_random_state(randomseed))
 
     print 'Read input OTUs from ',inputfile
     otus = p.read_csv(inputfile)
