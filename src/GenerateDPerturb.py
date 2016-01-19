@@ -2,18 +2,25 @@ import sys, getopt
 import pandas as p
 import numpy as np
 import random as rnd
+from itertools import compress
 import argparse
 
-class Constants(object):
-    DIVERSITY_REDUCTION   = 0.5
-    #CONTROL_B             = 5000
-    CONTROL_B             = 2500
-    TREATMENT_B           = 2500
-    #TREATMENT_B           = 5000
-    CONTROL_A              = 6.25
-    #CONTROL_A             = 25
-#    TREATMENT_A           = 25 
-    TREATMENT_A           = 6.25
+#sample without replacement
+def sample_without_replacement(freq_matrix,sizes):
+
+    X = np.zeros(freq_matrix.shape,dtype=np.int)
+
+    nsamples = freq_matrix.shape[0]
+    nOTUs = freq_matrix.shape[1]
+    for i in range(nsamples):
+        elements = np.repeat(range(nOTUs), freq_matrix[i,:].astype(int))
+        sample_e = np.random.choice(elements, size=sizes[i], replace=False)
+        unique, counts = np.unique(sample_e, return_counts=True)
+        nC = counts.shape[0]
+        for j in range(nC):
+            X[i,unique[j]] += counts[j]
+
+    return X
 
 #generate multinomial samples from matrix of relative abundances
 def generate_MN(rel_abund_matrix,n_Multi_Samples):
@@ -60,7 +67,7 @@ def generate_logSS(a,b,nSamples):
 
     return ZV
 
-def perturb_diversity(input_otus,input_otus_P,nSamples,nOTUs):
+def perturb_diversity(input_otus,input_otus_P,nSamples,nOTUs,dReduce):
 
     perturb_otus_P = np.copy(input_otus_P)
     perturb_otus   = np.copy(input_otus)
@@ -68,7 +75,7 @@ def perturb_diversity(input_otus,input_otus_P,nSamples,nOTUs):
         #get list of nonzero indices
         nonzero_s = np.nonzero(input_otus_P[s,:])
         nP = len(nonzero_s[0])
-        nS = int(Constants.DIVERSITY_REDUCTION*nP)
+        nS = int(dReduce*nP)
         remove = rnd.sample(nonzero_s[0], nS)
         perturb_otus_P[s,remove] = 0.0
         perturb_otus[s,remove] = 0
@@ -88,18 +95,42 @@ def main(argv):
     
     parser.add_argument('-s','--random_seed',default=23724839, type=int, 
         help=("specifies seed for numpy random number generator defaults to 23724839"))
+
+    parser.add_argument('-d','--diversity_reduction',default=0.5, type=float,
+        help=("fraction of OTUs removed by perturbation"))
+
+    parser.add_argument('-ca','--control_a',default=4.0, type=float,
+        help=("shape paramter for control gamma distn"))
+
+    parser.add_argument('-ta','--treatment_a',default=4.0, type=float,
+        help=("shape paramter for treatment gamma distn"))
+
+    parser.add_argument('-cb','--control_b',default=2000, type=float,
+        help=("scaleXshape paramter for control gamma distn"))
+
+    parser.add_argument('-tb','--treatment_b',default=2000, type=float,
+        help=("scaleXshape paramter for control gamma distn"))        
+
+    parser.add_argument('-l','--base_level',default=10000, type=int,
+        help=("specifies initial sub sampling"))
+
     
     #get command line arguments  
     args = parser.parse_args()
     
-    import ipdb; ipdb.set_trace()
+    #import ipdb; ipdb.set_trace()
     
     inputfile = args.input_file
     
     controlfile = args.output_file_stub+"_c.csv"
-    
+    controlfileR = args.output_file_stub+"_c_R0.csv"
     treatmentfile = args.output_file_stub+"_t.csv"
-    
+    treatmentfileR = args.output_file_stub+"_t_R0.csv"
+    combinedfile = args.output_file_stub+"_ct.csv"
+    combinedotusfile = args.output_file_stub+"_ct.csv"
+    metafile = args.output_file_stub+"_m.csv"
+    rarefile = args.output_file_stub+"_r.csv"
+        
     randomseed = args.random_seed
     
     np.random.seed(set_random_state(randomseed))
@@ -117,35 +148,61 @@ def main(argv):
 
     input_otus = otuI.as_matrix().astype(np.float64)
 
-    input_sums = input_otus.sum(axis=1)
-    input_otus_P = input_otus/input_sums[:,np.newaxis]
+    rare_sizes = np.repeat(args.base_level,nSamples)
 
-    (perturb_otus,perturb_otus_P) = perturb_diversity(input_otus,input_otus_P,nSamples,nOTUs)
+    input_rare = np.copy(input_otus)
+#sample_without_replacement(input_otus,rare_sizes)
     
-    controlSS = generate_logSS(Constants.CONTROL_A,Constants.CONTROL_B/Constants.CONTROL_A,nSamples)
-    treatmentSS = generate_logSS(Constants.TREATMENT_A,Constants.TREATMENT_B/Constants.TREATMENT_A,nSamples)
+    #remove empty columns
+    selectC = input_rare.sum(axis=0) > 0
+    otu_labels_rare = list(compress(otu_labels, selectC)) 
+    input_rare = input_rare[:, selectC]
+    
+    input_rare_df = generate_sample_df(input_rare,otu_labels_rare,sample_names)
+    input_rare_df.to_csv(rarefile,index=False)
 
-    control_OTUs   = generate_MN(input_otus_P,controlSS)
+    input_sums = (input_rare.sum(axis=1)).astype(float)
+
+    input_rare_P = input_rare.astype(float)/input_sums[:,np.newaxis]
+
+    nROTUs = input_rare.shape[1]
+    (perturb_otus,perturb_otus_P) = perturb_diversity(input_rare,input_rare_P,nSamples,nROTUs,args.diversity_reduction)
+    
+    controlSS = generate_logSS(args.control_a,args.control_b/args.control_a,nSamples)
+    treatmentSS = generate_logSS(args.treatment_a,args.treatment_b/args.treatment_a,nSamples)
+
+    control_OTUs   = generate_MN(input_rare_P,controlSS)
     treatment_OTUs = generate_MN(perturb_otus_P,treatmentSS) 
 
-
-    control_OTUs_df = generate_sample_df(control_OTUs,otu_labels,sample_names)
+    control_OTUs_df = generate_sample_df(control_OTUs,otu_labels_rare,sample_names)
     control_OTUs_df.to_csv(controlfile,index=False) 
+
+    selectCR = control_OTUs.sum(axis=0) > 0
+    otu_labels_CR = list(compress(otu_labels_rare, selectCR)) 
+    control_OTUsR = control_OTUs[:, selectCR]
+    control_OTUs_dfR = generate_sample_df(control_OTUsR,otu_labels_CR,sample_names)
+    (control_OTUs_dfR.transpose()).to_csv(controlfileR,header=False) 
 
     sample_names_T = []
     for i in range(nSamples):
         sample_names_T.append(sample_names[i] + "_T")
     
-    treatment_OTUs_df = generate_sample_df(treatment_OTUs,otu_labels,sample_names_T)
+    treatment_OTUs_df = generate_sample_df(treatment_OTUs,otu_labels_rare,sample_names_T)
     treatment_OTUs_df.to_csv(treatmentfile,index=False)
 
+    selectTR = treatment_OTUs.sum(axis=0) > 0
+    otu_labels_TR = list(compress(otu_labels_rare, selectTR)) 
+    treatment_OTUsR = treatment_OTUs[:, selectTR]
+    treatment_OTUs_dfR = generate_sample_df(treatment_OTUsR,otu_labels_TR,sample_names) 
+    (treatment_OTUs_dfR.transpose()).to_csv(treatmentfileR,header=False)
+
     combine_df = control_OTUs_df.append(treatment_OTUs_df)
-    combine_df.to_csv("Combined.csv",index=False)
+    combine_df.to_csv(combinedfile,index=False)
 
     input_OTUs_df   = generate_sample_df(input_otus,otu_labels,sample_names)
-    perturb_OTUs_df = generate_sample_df(perturb_otus,otu_labels,sample_names_T)
+    perturb_OTUs_df = generate_sample_df(perturb_otus,otu_labels_rare,sample_names_T)
     combine_OTUs_df = input_OTUs_df.append(perturb_OTUs_df)
-    combine_OTUs_df.to_csv("Combined_OTUs.csv",index=False)
+    combine_OTUs_df.to_csv(combinedotusfile,index=False)
 
     sample_C = sample_names.tolist() + sample_names_T
     perturb_C = ['False']*nSamples
@@ -159,7 +216,7 @@ def main(argv):
     cols = df.columns.tolist()
     cols = cols[-1:] + cols[:-1]
     df = df[cols]
-    df.to_csv("Meta.csv",index=False)
+    df.to_csv(metafile,index=False)
     #generate treatment sample sizes
 
 if __name__ == "__main__":
