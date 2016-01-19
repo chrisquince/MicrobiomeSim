@@ -58,23 +58,6 @@ usage: GenerateDPerturb.py [-h] [-s RANDOM_SEED] [-d DIVERSITY_REDUCTION]
 ```
 
 These define the following:
-parser.add_argument('-d','--diversity_reduction',default=0.5, type=float,
-        help=("fraction of OTUs removed by perturbation"))
-
-    parser.add_argument('-ca','--control_a',default=4.0, type=float,
-        help=("shape paramter for control gamma distn"))
-
-    parser.add_argument('-ta','--treatment_a',default=4.0, type=float,
-        help=("shape paramter for treatment gamma distn"))
-
-    parser.add_argument('-cb','--control_b',default=2000, type=float,
-        help=("scaleXshape paramter for control gamma distn"))
-
-    parser.add_argument('-tb','--treatment_b',default=2000, type=float,
-        help=("scaleXshape paramter for control gamma distn"))        
-
-    parser.add_argument('-l','--base_level',default=10000, type=int,
-        help=("specifies initial sub sampling"))
 
 * DIVERSITY_REDUCTION - the fraction of OTUs to randomly selected and removed - default 0.5
 * CONTROL_B - beta/alpha i.e. mean parameter for control sample sizes - default 2000
